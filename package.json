@@ -1,0 +1,17 @@
+{
+  "name": "llm-browser-agent",
+  "private": true,
+  "packageManager": "bun@1.2.22",
+  "workspaces": ["packages/*"],
+  "devDependencies": {
+    "turbo": "^2"
+  },
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "typecheck": "turbo typecheck"
+  }
+}
+

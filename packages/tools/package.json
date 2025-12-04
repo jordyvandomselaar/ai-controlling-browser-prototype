@@ -1,0 +1,15 @@
+{
+  "name": "@llm-browser-agent/tools",
+  "version": "0.0.0",
+  "module": "index.ts",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
