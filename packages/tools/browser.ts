@@ -47,11 +47,26 @@ export async function navigate(
   input: NavigateInput
 ): Promise<NavigateResult> {
   const { url } = navigateSchema.parse(input);
-  await page.goto(url, { waitUntil: "networkidle" });
-  // Extra delay to ensure rendering is complete
-  await page.waitForTimeout(500);
+
+  let message = `Navigated to ${url}`;
+
+  try {
+    // Use a short timeout (3 seconds) - if page doesn't load quickly, we still want to see what's there
+    await page.goto(url, { waitUntil: "networkidle", timeout: 3000 });
+  } catch (error) {
+    // If timeout or navigation error, still take a screenshot of whatever loaded
+    if (error instanceof Error && error.message.includes("Timeout")) {
+      message = `Navigation to ${url} timed out after 3s, but page may have partially loaded`;
+    } else {
+      message = `Navigation to ${url} had an issue: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`;
+    }
+  }
+
+  // Always take a screenshot, even if navigation had issues
   return {
-    message: `Navigated to ${url}`,
+    message,
     screenshot: await takeScreenshot(page),
   };
 }
