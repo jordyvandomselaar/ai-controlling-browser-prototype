@@ -12,6 +12,19 @@ export {
   queryElementViaCssSelectorSchema,
   type QueryElementViaCssSelectorInput,
   type QueryResult,
+  screenshot,
+  screenshotSchema,
+  type ScreenshotInput,
+  type ScreenshotResult,
+  click,
+  clickSchema,
+  type ClickInput,
+  scroll,
+  scrollSchema,
+  type ScrollInput,
+  type,
+  typeSchema,
+  type TypeInput,
 } from "./browser.ts";
 
 export { createBrowserTools, type BrowserTools } from "./ai-tools.ts";

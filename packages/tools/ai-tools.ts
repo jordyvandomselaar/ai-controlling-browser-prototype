@@ -13,6 +13,18 @@ import {
   queryElementViaCssSelector,
   queryElementViaCssSelectorSchema,
   type QueryElementViaCssSelectorInput,
+  screenshot,
+  screenshotSchema,
+  type ScreenshotInput,
+  click,
+  clickSchema,
+  type ClickInput,
+  scroll,
+  scrollSchema,
+  type ScrollInput,
+  type as typeText,
+  typeSchema,
+  type TypeInput,
 } from "./browser.ts";
 
 export function createBrowserTools(page: Page) {
@@ -40,10 +52,36 @@ export function createBrowserTools(page: Page) {
       description:
         "Query elements on the page using a CSS selector. Can retrieve text content or specific attributes from one or all matching elements.",
       inputSchema: queryElementViaCssSelectorSchema,
-      execute: async (input: QueryElementViaCssSelectorInput) => queryElementViaCssSelector(page, input),
+      execute: async (input: QueryElementViaCssSelectorInput) =>
+        queryElementViaCssSelector(page, input),
+    }),
+
+    screenshot: tool({
+      description:
+        "Take a screenshot of the current viewport. Returns a base64-encoded PNG image. Use this to see what the page looks like.",
+      inputSchema: screenshotSchema,
+      execute: async () => screenshot(page),
+    }),
+
+    click: tool({
+      description:
+        "Click at specific coordinates on the page (x, y pixels from top-left of viewport)",
+      inputSchema: clickSchema,
+      execute: async (input: ClickInput) => click(page, input),
+    }),
+
+    scroll: tool({
+      description: "Scroll the page or a specific element in a given direction",
+      inputSchema: scrollSchema,
+      execute: async (input: ScrollInput) => scroll(page, input),
+    }),
+
+    type: tool({
+      description: "Type text into an input element on the page",
+      inputSchema: typeSchema,
+      execute: async (input: TypeInput) => typeText(page, input),
     }),
   };
 }
 
 export type BrowserTools = ReturnType<typeof createBrowserTools>;
-
