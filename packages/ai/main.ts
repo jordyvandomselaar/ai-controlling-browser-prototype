@@ -4,7 +4,10 @@ import {
   navigate,
   getContents,
   screenshot,
+  labeledScreenshot,
   click,
+  clickByLabel,
+  setLastDetectedElements,
   scroll,
   type as typeText,
   reload,
@@ -25,13 +28,13 @@ const model = await client.llm.model();
 
 const browser = await chromium.launch({ headless: false });
 // Use 896x896 viewport to match the VLM's expected image size (no padding needed)
-const page = await browser.newPage({ viewport: { width: 896, height: 896 } });
+let page = await browser.newPage({ viewport: { width: 896, height: 896 } });
 
-const systemPrompt = `You are a web browsing agent that controls a real browser. You have VISION - you can see screenshots of web pages and interact with them.
+const systemPrompt = `You are a web browsing agent that controls a real browser. You have VISION - you can see screenshots of web pages with NUMBERED LABELS on clickable elements.
 
 ## YOUR CAPABILITIES
 
-You control a browser with a 896x896 pixel viewport. After each action, you receive a screenshot showing what the browser displays.
+You control a browser with a 896x896 pixel viewport. After each action, you receive a screenshot with numbered labels [1], [2], [3], etc. on clickable elements (buttons, links, inputs).
 
 ## AVAILABLE TOOLS
 
@@ -40,53 +43,62 @@ To use a tool, respond with ONLY a JSON object (no other text before or after):
 ### 1. navigate - Go to a URL
 {"tool": "navigate", "args": {"url": "https://example.com"}}
 - Use this to visit any website or image URL
-- Returns a screenshot of the loaded page
+- Returns a labeled screenshot showing clickable elements
 
-### 2. click - Click at coordinates  
+### 2. clickByLabel - Click a numbered element (PREFERRED)
+{"tool": "clickByLabel", "args": {"label": 5}}
+- Click the element with label [5] shown in the screenshot
+- This is the EASIEST and most ACCURATE way to click!
+- Returns a new labeled screenshot after clicking
+
+### 3. click - Click at coordinates (fallback)
 {"tool": "click", "args": {"x": 448, "y": 300}}
-- x: horizontal position (0 = left edge, 896 = right edge)
-- y: vertical position (0 = top edge, 896 = bottom edge)
-- Returns a screenshot after clicking
+- Only use if clickByLabel doesn't work
+- x: horizontal position (0 = left, 896 = right)
+- y: vertical position (0 = top, 896 = bottom)
 
-### 3. keyboard - Type text
+### 4. keyboard - Type text
 {"tool": "keyboard", "args": {"text": "hello world"}}
 - Types text at the current cursor position
 - IMPORTANT: Click on an input field first to focus it!
 
-### 4. press - Press a key
+### 5. press - Press a key
 {"tool": "press", "args": {"key": "Enter"}}
 - Keys: "Enter", "Tab", "Escape", "Backspace", "ArrowDown", "ArrowUp"
 
-### 5. scroll - Scroll the page
+### 6. scroll - Scroll the page
 {"tool": "scroll", "args": {"direction": "down", "amount": 500}}
 - direction: "up", "down", "left", "right"
 - amount: pixels to scroll (default 500)
 
-### 6. getContents - Get page text
+### 7. getContents - Get page text
 {"tool": "getContents", "args": {}}
 - Returns the text content of the page
-- Optional: {"tool": "getContents", "args": {"selector": "h1"}} for specific element
 
-### 7. screenshot - Take a new screenshot
-{"tool": "screenshot", "args": {}}
+### 8. labeledScreenshot - Get a fresh labeled screenshot
+{"tool": "labeledScreenshot", "args": {}}
+- Use this to refresh the element labels after scrolling
 
-### 8. reload - Reload the page
+### 9. reload - Reload the page
 {"tool": "reload", "args": {}}
 
-## COORDINATE SYSTEM
+## HOW TO READ LABELED SCREENSHOTS
 
-The viewport is 896x896 pixels:
-- Top-left corner: (0, 0)
-- Center: (448, 448)  
-- Bottom-right corner: (896, 896)
+Screenshots show numbered labels on clickable elements. Labels are COLOR-CODED by type:
 
-When you see a button or link in a screenshot, estimate its center coordinates:
-- If something is in the left third: x ≈ 150
-- If something is in the center: x ≈ 448
-- If something is in the right third: x ≈ 750
-- If something is near the top: y ≈ 100-200
-- If something is in the middle: y ≈ 400-500
-- If something is near the bottom: y ≈ 700-800
+🔵 **BLUE labels** = Links (navigation to other pages)
+🟢 **GREEN labels** = Input fields (text boxes, search bars, forms)
+🟠 **ORANGE labels** = Buttons (submit, click actions)
+🟣 **PURPLE labels** = Other interactive elements (menus, dropdowns)
+
+Each element has:
+- A colored box outline around the element
+- A colored circle with a white number at the top-left
+
+Use clickByLabel with the number to click that element:
+{"tool": "clickByLabel", "args": {"label": 3}}
+
+**IMPORTANT**: Blue labels are LINKS that navigate to new pages. Green labels are INPUT FIELDS where you can type text.
 
 ## WORKFLOW EXAMPLES
 
@@ -104,48 +116,44 @@ User: "Who is Albert Einstein?"
 Step 1 - Search on DuckDuckGo:
 {"tool": "navigate", "args": {"url": "https://duckduckgo.com/?q=Albert+Einstein"}}
 
-Step 2 - Look at the search results screenshot. Find a promising link (Wikipedia, official site, etc.) and click on it to get detailed information:
-{"tool": "click", "args": {"x": 300, "y": 250}}
+Step 2 - Look at the labeled screenshot. Find the Wikipedia link (e.g., label [4]) and click it:
+{"tool": "clickByLabel", "args": {"label": 4}}
 
-Step 3 - Read the actual article page. Use getContents to extract text:
+Step 3 - Read the article. Use getContents to extract text:
 {"tool": "getContents", "args": {}}
 
-Step 4 - If you need more information, scroll down or visit another source:
+Step 4 - Scroll down for more information:
 {"tool": "scroll", "args": {"direction": "down", "amount": 500}}
 
-Step 5 - Visit a second source for verification (e.g., another search result):
+Step 5 - Get fresh labels after scrolling:
+{"tool": "labeledScreenshot", "args": {}}
+
+Step 6 - Visit another source for verification. Go back to search:
 {"tool": "navigate", "args": {"url": "https://duckduckgo.com/?q=Albert+Einstein+biography"}}
 
-Step 6 - Click on a different result to cross-reference:
-{"tool": "click", "args": {"x": 300, "y": 350}}
+Step 7 - Click on a different result (e.g., label [3]):
+{"tool": "clickByLabel", "args": {"label": 3}}
 
-Step 7 - Only after visiting multiple sources and gathering detailed information, provide your comprehensive answer.
+Step 8 - Only after visiting multiple sources, provide your comprehensive answer.
 
-### Example 3: Find a person's information
-User: "Who is John Smith from Acme Corp?"
+### Example 3: Handle cookie consent dialogs
+When you see a cookie banner:
+1. Look for "Accept" or "Reject" button labels in the screenshot
+2. Click it using the label: {"tool": "clickByLabel", "args": {"label": 2}}
+3. Continue with your task
 
-Step 1 - Search on DuckDuckGo:
-{"tool": "navigate", "args": {"url": "https://duckduckgo.com/?q=John+Smith+Acme+Corp"}}
+### Example 4: Fill out a search form
+Step 1 - Navigate to the site:
+{"tool": "navigate", "args": {"url": "https://google.com"}}
 
-Step 2 - Click on their LinkedIn profile if visible:
-{"tool": "click", "args": {"x": 300, "y": 200}}
+Step 2 - Find the search input (look for input[search] or input[text] label):
+{"tool": "clickByLabel", "args": {"label": 1}}
 
-Step 3 - If LinkedIn shows a login wall, go back and try another source:
-{"tool": "navigate", "args": {"url": "https://duckduckgo.com/?q=John+Smith+Acme+Corp"}}
+Step 3 - Type your search:
+{"tool": "keyboard", "args": {"text": "cats"}}
 
-Step 4 - Try their company website:
-{"tool": "navigate", "args": {"url": "https://acmecorp.com/team"}}
-
-Step 5 - Read the page content:
-{"tool": "getContents", "args": {}}
-
-Step 6 - Compile information from multiple sources into your answer.
-
-### Example 4: Handle cookie consent dialogs
-When you see a cookie banner with "Accept" or "Reject" buttons:
-1. Look at the screenshot to find the button position
-2. Click on it: {"tool": "click", "args": {"x": 200, "y": 400}}
-3. Then continue with your task
+Step 4 - Press Enter:
+{"tool": "press", "args": {"key": "Enter"}}
 
 ## CRITICAL RULES
 
@@ -182,7 +190,6 @@ Stop using tools and give your final answer when:
 
 Your final response should be plain text (no JSON) with a comprehensive answer based on all the sources you visited.`;
 
-
 // Parse tool call from model response - can be anywhere in the content
 function parseToolCall(
   content: string
@@ -218,6 +225,33 @@ function parseToolCall(
   return null;
 }
 
+// Helper to get color indicator for element type
+function getColorIndicator(type: string): string {
+  if (type === "link") return "🔵"; // Blue for links
+  if (type.startsWith("input[") || type === "textarea" || type === "select")
+    return "🟢"; // Green for inputs
+  if (type === "button") return "🟠"; // Orange for buttons
+  return "🟣"; // Purple for other
+}
+
+// Helper to format element list for the model
+function formatElementList(
+  elements: Array<{ label: number; type: string; text: string }>
+): string {
+  if (elements.length === 0) {
+    return "No clickable elements detected on this page.";
+  }
+  const lines = elements.map(
+    (el) =>
+      `${getColorIndicator(el.type)} [${el.label}] ${el.type}: "${
+        el.text || "(no text)"
+      }"`
+  );
+  return `Clickable elements (🔵=link, 🟢=input, 🟠=button, 🟣=other):\n${lines.join(
+    "\n"
+  )}`;
+}
+
 // Execute a tool and return result + optional image
 async function executeTool(
   toolName: string,
@@ -229,12 +263,19 @@ async function executeTool(
   switch (toolName) {
     case "navigate": {
       try {
-        const result = await navigate(page, { url: args.url as string });
+        const navResult = await navigate(page, { url: args.url as string });
+        // Take a labeled screenshot after navigation
+        const result = await labeledScreenshot(page);
+        setLastDetectedElements(result.elements);
         const image = await client.files.prepareImageBase64(
-          result.screenshot.filename,
-          result.screenshot.base64
+          result.filename,
+          result.base64
         );
-        return { result: result.message, image };
+        const elementList = formatElementList(result.elements);
+        return {
+          result: `${navResult.message}\n\n${elementList}`,
+          image,
+        };
       } catch (error) {
         return {
           result: `Navigation failed: ${
@@ -242,6 +283,16 @@ async function executeTool(
           }`,
         };
       }
+    }
+    case "labeledScreenshot": {
+      const result = await labeledScreenshot(page);
+      setLastDetectedElements(result.elements);
+      const image = await client.files.prepareImageBase64(
+        result.filename,
+        result.base64
+      );
+      const elementList = formatElementList(result.elements);
+      return { result: `Labeled screenshot taken.\n\n${elementList}`, image };
     }
     case "screenshot": {
       const result = await screenshot(page);
@@ -257,6 +308,22 @@ async function executeTool(
       });
       return { result };
     }
+    case "clickByLabel": {
+      const result = await clickByLabel(page, {
+        label: args.label as number,
+      });
+      // If a new tab was opened, switch to it
+      if (result.newPage) {
+        page = result.newPage;
+      }
+      setLastDetectedElements(result.screenshot.elements);
+      const image = await client.files.prepareImageBase64(
+        result.screenshot.filename,
+        result.screenshot.base64
+      );
+      const elementList = formatElementList(result.screenshot.elements);
+      return { result: `${result.message}\n\n${elementList}`, image };
+    }
     case "click": {
       const clickResult = await click(page, {
         x: args.x as number,
@@ -264,19 +331,30 @@ async function executeTool(
         button: "left",
         clickCount: 1,
       });
-      // Screenshot already includes click indicator showing where we clicked
+      // After clicking, take a labeled screenshot
+      const labeled = await labeledScreenshot(page);
+      setLastDetectedElements(labeled.elements);
       const image = await client.files.prepareImageBase64(
-        clickResult.screenshot.filename,
-        clickResult.screenshot.base64
+        labeled.filename,
+        labeled.base64
       );
-      return { result: clickResult.message, image };
+      const elementList = formatElementList(labeled.elements);
+      return { result: `${clickResult.message}\n\n${elementList}`, image };
     }
     case "scroll": {
       const result = await scroll(page, {
         direction: args.direction as "up" | "down" | "left" | "right",
         amount: (args.amount as number) ?? 500,
       });
-      return { result };
+      // After scrolling, take a labeled screenshot to show new elements
+      const labeled = await labeledScreenshot(page);
+      setLastDetectedElements(labeled.elements);
+      const image = await client.files.prepareImageBase64(
+        labeled.filename,
+        labeled.base64
+      );
+      const elementList = formatElementList(labeled.elements);
+      return { result: `${result}\n\n${elementList}`, image };
     }
     case "type": {
       try {
@@ -298,30 +376,37 @@ async function executeTool(
     case "keyboard": {
       // Type text directly using keyboard (after clicking to focus)
       await page.keyboard.type(args.text as string);
-      const screenshotResult = await screenshot(page);
+      const labeled = await labeledScreenshot(page);
+      setLastDetectedElements(labeled.elements);
       const image = await client.files.prepareImageBase64(
-        screenshotResult.filename,
-        screenshotResult.base64
+        labeled.filename,
+        labeled.base64
       );
-      return { result: `Typed "${args.text}"`, image };
+      const elementList = formatElementList(labeled.elements);
+      return { result: `Typed "${args.text}"\n\n${elementList}`, image };
     }
     case "press": {
       // Press a key (Enter, Tab, etc.)
       await page.keyboard.press(args.key as string);
-      const screenshotResult = await screenshot(page);
+      const labeled = await labeledScreenshot(page);
+      setLastDetectedElements(labeled.elements);
       const image = await client.files.prepareImageBase64(
-        screenshotResult.filename,
-        screenshotResult.base64
+        labeled.filename,
+        labeled.base64
       );
-      return { result: `Pressed ${args.key}`, image };
+      const elementList = formatElementList(labeled.elements);
+      return { result: `Pressed ${args.key}\n\n${elementList}`, image };
     }
     case "reload": {
       const result = await reload(page, {});
+      const labeled = await labeledScreenshot(page);
+      setLastDetectedElements(labeled.elements);
       const image = await client.files.prepareImageBase64(
-        result.screenshot.filename,
-        result.screenshot.base64
+        labeled.filename,
+        labeled.base64
       );
-      return { result: result.message, image };
+      const elementList = formatElementList(labeled.elements);
+      return { result: `${result.message}\n\n${elementList}`, image };
     }
     default:
       return { result: `Unknown tool: ${toolName}` };
@@ -336,7 +421,7 @@ try {
     { role: "user", content: prompt },
   ]);
 
-  const maxRounds = 10;
+  const maxRounds = 100;
   for (let round = 0; round < maxRounds; round++) {
     console.log(`\n[Round ${round + 1}]`);
 
