@@ -1,18 +1,13 @@
-import { ollama } from "ollama-ai-provider-v2";
+import { LMStudioClient } from "@lmstudio/sdk";
 
-export { generateText, generateObject, streamText, streamObject } from "ai";
-export type {
-  CoreMessage,
-  CoreUserMessage,
-  CoreAssistantMessage,
-  CoreSystemMessage,
-  CoreToolMessage,
-  ToolCallPart,
-  ToolResultPart,
-  TextPart,
-  ImagePart,
-} from "ai";
+export const client = new LMStudioClient();
 
-export const model = ollama("ministral-3:8b");
-
-export { ollama };
+// Get the model - this will use the currently loaded model in LM Studio
+// or you can specify a specific model like "google/gemma-3-12b"
+export async function getModel(modelIdentifier?: string) {
+  if (modelIdentifier) {
+    return client.llm.model(modelIdentifier);
+  }
+  // Use any loaded model
+  return client.llm.model();
+}

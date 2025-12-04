@@ -1,1 +1,1 @@
-export * from "./ai.ts";
+export { client, getModel } from "./ai.ts";

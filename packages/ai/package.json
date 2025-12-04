@@ -6,6 +6,7 @@
   "private": true,
   "dependencies": {
     "@llm-browser-agent/tools": "workspace:*",
+    "@lmstudio/sdk": "^1.5.0",
     "playwright": "^1.57.0"
   },
   "devDependencies": {

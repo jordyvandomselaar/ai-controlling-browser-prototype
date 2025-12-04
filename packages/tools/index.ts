@@ -18,6 +18,7 @@ export {
   screenshotSchema,
   type ScreenshotInput,
   type ScreenshotResult,
+  type ScreenshotData,
   click,
   clickSchema,
   type ClickInput,

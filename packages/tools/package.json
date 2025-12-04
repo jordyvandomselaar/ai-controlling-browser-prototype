@@ -13,8 +13,9 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "ai": "^5.0.106",
+    "@lmstudio/sdk": "^1.5.0",
     "playwright": "^1.57.0",
+    "sharp": "^0.34.5",
     "zod": "3"
   }
 }
