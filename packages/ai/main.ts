@@ -22,7 +22,10 @@ try {
     model,
     prompt,
     tools,
-    stopWhen: stepCountIs(10),
+    providerOptions: {
+      ollama: { think: false },
+    },
+    stopWhen: stepCountIs(100),
     onStepFinish: ({ toolCalls, toolResults }) => {
       if (toolCalls && toolCalls.length > 0) {
         for (let i = 0; i < toolCalls.length; i++) {
@@ -39,12 +42,7 @@ try {
             );
           }
           if (result && "output" in result) {
-            const resultStr = JSON.stringify(result.output);
-            const truncated =
-              resultStr.length > 500
-                ? resultStr.slice(0, 500) + "..."
-                : resultStr;
-            console.log(`  Output: ${truncated}`);
+            console.log(`  Output: ${JSON.stringify(result.output)}`);
           }
         }
       }

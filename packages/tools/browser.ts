@@ -7,22 +7,45 @@ export const navigateSchema = z.object({
 
 export type NavigateInput = z.infer<typeof navigateSchema>;
 
-export async function navigate(page: Page, input: NavigateInput): Promise<string> {
+export interface NavigateResult {
+  message: string;
+  screenshot: {
+    base64: string;
+    mimeType: "image/png";
+  };
+}
+
+export async function navigate(
+  page: Page,
+  input: NavigateInput
+): Promise<NavigateResult> {
   const { url } = navigateSchema.parse(input);
   await page.goto(url, { waitUntil: "domcontentloaded" });
-  return `Navigated to ${url}`;
+  const buffer = await page.screenshot({ type: "png" });
+  return {
+    message: `Navigated to ${url}`,
+    screenshot: {
+      base64: buffer.toString("base64"),
+      mimeType: "image/png",
+    },
+  };
 }
 
 export const getContentsSchema = z.object({
   selector: z
     .string()
     .optional()
-    .describe("Optional CSS selector to get contents from. If not provided, returns the entire page content."),
+    .describe(
+      "Optional CSS selector to get contents from. If not provided, returns the entire page content."
+    ),
 });
 
 export type GetContentsInput = z.infer<typeof getContentsSchema>;
 
-export async function getContents(page: Page, input: GetContentsInput = {}): Promise<string> {
+export async function getContents(
+  page: Page,
+  input: GetContentsInput = {}
+): Promise<string> {
   const { selector } = getContentsSchema.parse(input);
 
   if (selector) {
@@ -47,10 +70,28 @@ export const reloadSchema = z.object({
 
 export type ReloadInput = z.infer<typeof reloadSchema>;
 
-export async function reload(page: Page, input: z.input<typeof reloadSchema> = {}): Promise<string> {
+export interface ReloadResult {
+  message: string;
+  screenshot: {
+    base64: string;
+    mimeType: "image/png";
+  };
+}
+
+export async function reload(
+  page: Page,
+  input: z.input<typeof reloadSchema> = {}
+): Promise<ReloadResult> {
   const { waitUntil } = reloadSchema.parse(input);
   await page.reload({ waitUntil });
-  return `Page reloaded (waited for ${waitUntil})`;
+  const buffer = await page.screenshot({ type: "png" });
+  return {
+    message: `Page reloaded (waited for ${waitUntil})`,
+    screenshot: {
+      base64: buffer.toString("base64"),
+      mimeType: "image/png",
+    },
+  };
 }
 
 export const queryElementViaCssSelectorSchema = z.object({
