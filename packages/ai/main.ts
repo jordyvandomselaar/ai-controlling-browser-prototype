@@ -24,51 +24,95 @@ const client = new LMStudioClient();
 const model = await client.llm.model();
 
 const browser = await chromium.launch({ headless: false });
-const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+// Use 896x896 viewport to match the VLM's expected image size (no padding needed)
+const page = await browser.newPage({ viewport: { width: 896, height: 896 } });
 
 // Tool definitions as a string to include in the system prompt
 const toolsDescription = `
 You have access to these tools to browse the web:
 
-1. navigate(url: string) - Navigate to a URL
+1. navigate(url: string) - Navigate to a URL. Returns a screenshot.
 2. screenshot() - Take a screenshot of the current page  
 3. getContents(selector?: string) - Get text content of page or element
-4. click(x: number, y: number) - Click at coordinates
+4. click(x: number, y: number) - Click at pixel coordinates on the page. The viewport is 896x896 pixels. Returns a screenshot.
 5. scroll(direction: "up"|"down"|"left"|"right", amount?: number) - Scroll the page
-6. type(selector: string, text: string) - Type into an input
-7. reload() - Reload the page
+6. type(selector: string, text: string) - Type into an input element by CSS selector
+7. keyboard(text: string) - Type text directly using keyboard (click to focus first!)
+8. press(key: string) - Press a key like "Enter", "Tab", "Escape"
+9. reload() - Reload the page
 
 To use a tool, respond with ONLY a JSON object like this:
 {"tool": "navigate", "args": {"url": "https://example.com"}}
+{"tool": "click", "args": {"x": 400, "y": 300}}
+{"tool": "keyboard", "args": {"text": "search query"}}
+{"tool": "press", "args": {"key": "Enter"}}
+
+TYPING WORKFLOW: To type in a search box:
+1. Click on the input field using coordinates: {"tool": "click", "args": {"x": 400, "y": 200}}
+2. Type using keyboard: {"tool": "keyboard", "args": {"text": "your search"}}
+3. Press Enter: {"tool": "press", "args": {"key": "Enter"}}
 
 After I execute the tool, I'll show you the result (and a screenshot if applicable).
 When you have enough information to answer, just respond normally without JSON.
 `;
 
-const systemPrompt = `You are a web browsing agent. You MUST use tools to browse the web. You cannot answer questions without first using tools.
+const systemPrompt = `You are a persistent web browsing agent with VISION. You can SEE screenshots and click on elements by their coordinates.
 
 ${toolsDescription}
 
-CRITICAL RULES:
-1. You MUST use the navigate tool to go to any URL before you can see it
-2. You CANNOT see or describe images without first navigating to them
-3. ALWAYS respond with a tool call JSON first - never answer directly
-4. When you see a screenshot, describe what you ACTUALLY SEE - do not hallucinate`;
+VISION & CLICKING:
+- After each navigation, you receive a screenshot of the page (896x896 pixels)
+- LOOK at the screenshot to find buttons, links, and interactive elements
+- To click something, estimate its x,y coordinates from the screenshot and use the click tool
+- Example: If a button appears roughly in the center, click at x:448, y:448
 
-// Parse tool call from model response
+HANDLING DIALOGS:
+- Cookie consent: Look for "Accept", "Reject", "Decline" buttons and CLICK them using coordinates
+- CAPTCHA/Robot check: Look for checkboxes or buttons and CLICK them
+- Login walls: Try to find "Skip" or "Close" buttons
+
+CRITICAL RULES:
+1. NEVER answer without using tools first! You MUST navigate to URLs before you can see them.
+2. If the user asks about an image URL, you MUST use navigate to go to that URL first.
+3. LOOK at screenshots carefully - describe what you ACTUALLY SEE in the image
+4. Use click(x, y) to interact with buttons and links you see in screenshots
+5. BE PERSISTENT: If one source fails, try another
+6. If blocked by a dialog, CLICK to dismiss it before continuing
+7. PREFER DuckDuckGo (https://duckduckgo.com/?q=...) over Google - it has no cookie dialogs
+
+IMPORTANT: Your FIRST response must ALWAYS be a tool call JSON. Never answer directly!`;
+
+// Parse tool call from model response - can be anywhere in the content
 function parseToolCall(
   content: string
 ): { tool: string; args: Record<string, unknown> } | null {
-  const trimmed = content.trim();
-  if (!trimmed.startsWith("{")) return null;
-
-  try {
-    const parsed = JSON.parse(trimmed);
-    if (parsed.tool && typeof parsed.tool === "string") {
-      return { tool: parsed.tool, args: parsed.args || {} };
+  // Try to find JSON object anywhere in the content
+  const jsonMatch = content.match(
+    /\{[^{}]*"tool"\s*:\s*"[^"]+"\s*,\s*"args"\s*:\s*\{[^{}]*\}[^{}]*\}/
+  );
+  if (!jsonMatch) {
+    // Try simpler pattern for empty args
+    const simpleMatch = content.match(/\{[^{}]*"tool"\s*:\s*"[^"]+"[^{}]*\}/);
+    if (!simpleMatch) return null;
+    try {
+      const parsed = JSON.parse(simpleMatch[0]);
+      if (parsed.tool && typeof parsed.tool === "string") {
+        return { tool: parsed.tool, args: parsed.args || {} };
+      }
+    } catch {
+      return null;
     }
-  } catch {
-    // Not valid JSON, not a tool call
+  }
+
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed.tool && typeof parsed.tool === "string") {
+        return { tool: parsed.tool, args: parsed.args || {} };
+      }
+    } catch {
+      // Not valid JSON
+    }
   }
   return null;
 }
@@ -83,12 +127,20 @@ async function executeTool(
 
   switch (toolName) {
     case "navigate": {
-      const result = await navigate(page, { url: args.url as string });
-      const image = await client.files.prepareImageBase64(
-        result.screenshot.filename,
-        result.screenshot.base64
-      );
-      return { result: result.message, image };
+      try {
+        const result = await navigate(page, { url: args.url as string });
+        const image = await client.files.prepareImageBase64(
+          result.screenshot.filename,
+          result.screenshot.base64
+        );
+        return { result: result.message, image };
+      } catch (error) {
+        return {
+          result: `Navigation failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        };
+      }
     }
     case "screenshot": {
       const result = await screenshot(page);
@@ -105,13 +157,19 @@ async function executeTool(
       return { result };
     }
     case "click": {
-      const result = await click(page, {
+      const clickResult = await click(page, {
         x: args.x as number,
         y: args.y as number,
         button: "left",
         clickCount: 1,
       });
-      return { result };
+      // Take a screenshot after clicking so model can see the result
+      const screenshotResult = await screenshot(page);
+      const image = await client.files.prepareImageBase64(
+        screenshotResult.filename,
+        screenshotResult.base64
+      );
+      return { result: clickResult, image };
     }
     case "scroll": {
       const result = await scroll(page, {
@@ -121,13 +179,41 @@ async function executeTool(
       return { result };
     }
     case "type": {
-      const result = await typeText(page, {
-        selector: args.selector as string,
-        text: args.text as string,
-        delay: 0,
-        clear: false,
-      });
-      return { result };
+      try {
+        const result = await typeText(page, {
+          selector: args.selector as string,
+          text: args.text as string,
+          delay: 0,
+          clear: false,
+        });
+        return { result };
+      } catch (error) {
+        return {
+          result: `Type failed: ${
+            error instanceof Error ? error.message : String(error)
+          }. Try clicking on the input field first, then use the keyboard tool.`,
+        };
+      }
+    }
+    case "keyboard": {
+      // Type text directly using keyboard (after clicking to focus)
+      await page.keyboard.type(args.text as string);
+      const screenshotResult = await screenshot(page);
+      const image = await client.files.prepareImageBase64(
+        screenshotResult.filename,
+        screenshotResult.base64
+      );
+      return { result: `Typed "${args.text}"`, image };
+    }
+    case "press": {
+      // Press a key (Enter, Tab, etc.)
+      await page.keyboard.press(args.key as string);
+      const screenshotResult = await screenshot(page);
+      const image = await client.files.prepareImageBase64(
+        screenshotResult.filename,
+        screenshotResult.base64
+      );
+      return { result: `Pressed ${args.key}`, image };
     }
     case "reload": {
       const result = await reload(page, {});

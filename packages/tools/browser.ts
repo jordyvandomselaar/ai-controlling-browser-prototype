@@ -9,8 +9,14 @@ export interface ScreenshotData {
 
 async function takeScreenshot(page: Page): Promise<ScreenshotData> {
   const rawBuffer = await page.screenshot({ type: "jpeg" });
+
+  // Resize to exactly 896x896 with black padding to avoid MLX adding its own padding
+  // This ensures consistent image sizes across all screenshots
   const compressedBuffer = await sharp(rawBuffer)
-    .resize(896, 896, { fit: "inside" })
+    .resize(896, 896, {
+      fit: "contain", // Fit inside and add padding
+      background: { r: 0, g: 0, b: 0 }, // Black padding
+    })
     .jpeg({ quality: 80 })
     .toBuffer();
 
@@ -41,7 +47,9 @@ export async function navigate(
   input: NavigateInput
 ): Promise<NavigateResult> {
   const { url } = navigateSchema.parse(input);
-  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.goto(url, { waitUntil: "networkidle" });
+  // Extra delay to ensure rendering is complete
+  await page.waitForTimeout(500);
   return {
     message: `Navigated to ${url}`,
     screenshot: await takeScreenshot(page),
@@ -105,6 +113,8 @@ export async function reload(
 ): Promise<ReloadResult> {
   const { waitUntil } = reloadSchema.parse(input);
   await page.reload({ waitUntil });
+  // Extra delay to ensure rendering is complete
+  await page.waitForTimeout(500);
   return {
     message: `Page reloaded (waited for ${waitUntil})`,
     screenshot: await takeScreenshot(page),
@@ -216,6 +226,8 @@ export type ClickInput = z.infer<typeof clickSchema>;
 export async function click(page: Page, input: ClickInput): Promise<string> {
   const { x, y, button, clickCount } = clickSchema.parse(input);
   await page.mouse.click(x, y, { button, clickCount });
+  // Wait for any navigation or rendering triggered by the click
+  await page.waitForTimeout(500);
   return `Clicked at coordinates (${x}, ${y})`;
 }
 
