@@ -13,6 +13,6 @@ export type {
   ImagePart,
 } from "ai";
 
-export const model = ollama("qwen3-vl:4b");
+export const model = ollama("ministral-3:8b");
 
 export { ollama };

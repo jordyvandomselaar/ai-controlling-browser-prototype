@@ -1,5 +1,15 @@
 import type { Page } from "playwright";
+import type { ImagePart } from "ai";
 import { z } from "zod";
+
+async function takeScreenshot(page: Page): Promise<ImagePart> {
+  const buffer = await page.screenshot({ type: "jpeg", quality: 80 });
+  return {
+    type: "image",
+    image: buffer,
+    mediaType: "image/jpeg",
+  };
+}
 
 export const navigateSchema = z.object({
   url: z.string().url().describe("The URL to navigate to"),
@@ -9,10 +19,7 @@ export type NavigateInput = z.infer<typeof navigateSchema>;
 
 export interface NavigateResult {
   message: string;
-  screenshot: {
-    base64: string;
-    mimeType: "image/png";
-  };
+  screenshot: ImagePart;
 }
 
 export async function navigate(
@@ -21,13 +28,9 @@ export async function navigate(
 ): Promise<NavigateResult> {
   const { url } = navigateSchema.parse(input);
   await page.goto(url, { waitUntil: "domcontentloaded" });
-  const buffer = await page.screenshot({ type: "png" });
   return {
     message: `Navigated to ${url}`,
-    screenshot: {
-      base64: buffer.toString("base64"),
-      mimeType: "image/png",
-    },
+    screenshot: await takeScreenshot(page),
   };
 }
 
@@ -72,10 +75,7 @@ export type ReloadInput = z.infer<typeof reloadSchema>;
 
 export interface ReloadResult {
   message: string;
-  screenshot: {
-    base64: string;
-    mimeType: "image/png";
-  };
+  screenshot: ImagePart;
 }
 
 export async function reload(
@@ -84,13 +84,9 @@ export async function reload(
 ): Promise<ReloadResult> {
   const { waitUntil } = reloadSchema.parse(input);
   await page.reload({ waitUntil });
-  const buffer = await page.screenshot({ type: "png" });
   return {
     message: `Page reloaded (waited for ${waitUntil})`,
-    screenshot: {
-      base64: buffer.toString("base64"),
-      mimeType: "image/png",
-    },
+    screenshot: await takeScreenshot(page),
   };
 }
 
@@ -99,15 +95,21 @@ export const queryElementViaCssSelectorSchema = z.object({
   attribute: z
     .string()
     .optional()
-    .describe("Optional attribute to retrieve from the element(s). If not provided, returns text content."),
+    .describe(
+      "Optional attribute to retrieve from the element(s). If not provided, returns text content."
+    ),
   all: z
     .boolean()
     .optional()
     .default(false)
-    .describe("If true, returns all matching elements. Otherwise, returns only the first match."),
+    .describe(
+      "If true, returns all matching elements. Otherwise, returns only the first match."
+    ),
 });
 
-export type QueryElementViaCssSelectorInput = z.infer<typeof queryElementViaCssSelectorSchema>;
+export type QueryElementViaCssSelectorInput = z.infer<
+  typeof queryElementViaCssSelectorSchema
+>;
 
 export interface QueryResult {
   found: boolean;
@@ -122,7 +124,8 @@ export async function queryElementViaCssSelector(
   page: Page,
   input: QueryElementViaCssSelectorInput
 ): Promise<QueryResult> {
-  const { selector, attribute, all } = queryElementViaCssSelectorSchema.parse(input);
+  const { selector, attribute, all } =
+    queryElementViaCssSelectorSchema.parse(input);
 
   if (all) {
     const elements = await page.$$(selector);
@@ -133,7 +136,9 @@ export async function queryElementViaCssSelector(
 
     const results = await Promise.all(
       elements.map(async (element, index) => {
-        const value = attribute ? await element.getAttribute(attribute) : await element.textContent();
+        const value = attribute
+          ? await element.getAttribute(attribute)
+          : await element.textContent();
         return { index, value };
       })
     );
@@ -147,7 +152,9 @@ export async function queryElementViaCssSelector(
     return { found: false, count: 0, results: [] };
   }
 
-  const value = attribute ? await element.getAttribute(attribute) : await element.textContent();
+  const value = attribute
+    ? await element.getAttribute(attribute)
+    : await element.textContent();
 
   return { found: true, count: 1, results: [{ index: 0, value }] };
 }
@@ -157,17 +164,10 @@ export const screenshotSchema = z.object({});
 
 export type ScreenshotInput = z.infer<typeof screenshotSchema>;
 
-export interface ScreenshotResult {
-  base64: string;
-  mimeType: "image/png";
-}
+export type ScreenshotResult = ImagePart;
 
 export async function screenshot(page: Page): Promise<ScreenshotResult> {
-  const buffer = await page.screenshot({ type: "png" });
-  return {
-    base64: buffer.toString("base64"),
-    mimeType: "image/png",
-  };
+  return takeScreenshot(page);
 }
 
 // Click tool
