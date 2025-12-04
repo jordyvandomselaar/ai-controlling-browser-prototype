@@ -2,7 +2,9 @@
 
 A vision-enabled AI agent that can browse the web autonomously using a local LLM running in LM Studio. The agent sees screenshots of web pages with labeled clickable elements and can interact with them.
 
-![Demo](demo.mp4)
+<video src="demo.mp4" controls width="100%"></video>
+
+> **Note**: If the video doesn't play in your browser, [download it directly](demo.mp4) or view it locally.
 
 ## Features
 
