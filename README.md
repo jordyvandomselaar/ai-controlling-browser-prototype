@@ -2,6 +2,8 @@
 
 A vision-enabled AI agent that can browse the web autonomously using a local LLM running in LM Studio. The agent sees screenshots of web pages with labeled clickable elements and can interact with them.
 
+![Demo](demo.mp4)
+
 ## Features
 
 - **Vision-based browsing**: Uses a Vision-Language Model (VLM) to see and understand web pages
