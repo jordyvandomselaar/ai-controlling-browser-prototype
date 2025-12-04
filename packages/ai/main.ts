@@ -264,13 +264,12 @@ async function executeTool(
         button: "left",
         clickCount: 1,
       });
-      // Take a screenshot after clicking so model can see the result
-      const screenshotResult = await screenshot(page);
+      // Screenshot already includes click indicator showing where we clicked
       const image = await client.files.prepareImageBase64(
-        screenshotResult.filename,
-        screenshotResult.base64
+        clickResult.screenshot.filename,
+        clickResult.screenshot.base64
       );
-      return { result: clickResult, image };
+      return { result: clickResult.message, image };
     }
     case "scroll": {
       const result = await scroll(page, {

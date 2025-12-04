@@ -7,18 +7,42 @@ export interface ScreenshotData {
   filename: string;
 }
 
-async function takeScreenshot(page: Page): Promise<ScreenshotData> {
+interface ClickIndicator {
+  x: number;
+  y: number;
+}
+
+async function takeScreenshot(
+  page: Page,
+  clickIndicator?: ClickIndicator
+): Promise<ScreenshotData> {
   const rawBuffer = await page.screenshot({ type: "jpeg" });
 
   // Resize to exactly 896x896 with black padding to avoid MLX adding its own padding
   // This ensures consistent image sizes across all screenshots
-  const compressedBuffer = await sharp(rawBuffer)
-    .resize(896, 896, {
-      fit: "contain", // Fit inside and add padding
-      background: { r: 0, g: 0, b: 0 }, // Black padding
-    })
-    .jpeg({ quality: 80 })
-    .toBuffer();
+  let pipeline = sharp(rawBuffer).resize(896, 896, {
+    fit: "contain", // Fit inside and add padding
+    background: { r: 0, g: 0, b: 0 }, // Black padding
+  });
+
+  // If click indicator is provided, draw a red dot at the click location
+  if (clickIndicator) {
+    const { x, y } = clickIndicator;
+    const dotSize = 20; // Diameter of the dot
+    const halfDot = dotSize / 2;
+
+    // Create a red circle SVG overlay
+    const circleSvg = Buffer.from(`
+      <svg width="896" height="896">
+        <circle cx="${x}" cy="${y}" r="${halfDot}" fill="red" stroke="white" stroke-width="3"/>
+        <circle cx="${x}" cy="${y}" r="3" fill="white"/>
+      </svg>
+    `);
+
+    pipeline = pipeline.composite([{ input: circleSvg, top: 0, left: 0 }]);
+  }
+
+  const compressedBuffer = await pipeline.jpeg({ quality: 80 }).toBuffer();
 
   // Debug: save screenshot to disk
   await Bun.write("/tmp/debug-screenshot.jpg", compressedBuffer);
@@ -238,12 +262,25 @@ export const clickSchema = z.object({
 
 export type ClickInput = z.infer<typeof clickSchema>;
 
-export async function click(page: Page, input: ClickInput): Promise<string> {
+export interface ClickResult {
+  message: string;
+  screenshot: ScreenshotData;
+}
+
+export async function click(
+  page: Page,
+  input: ClickInput
+): Promise<ClickResult> {
   const { x, y, button, clickCount } = clickSchema.parse(input);
   await page.mouse.click(x, y, { button, clickCount });
   // Wait for any navigation or rendering triggered by the click
   await page.waitForTimeout(500);
-  return `Clicked at coordinates (${x}, ${y})`;
+  // Take screenshot with click indicator showing where we clicked
+  const screenshotWithIndicator = await takeScreenshot(page, { x, y });
+  return {
+    message: `Clicked at coordinates (${x}, ${y})`,
+    screenshot: screenshotWithIndicator,
+  };
 }
 
 // Scroll tool
