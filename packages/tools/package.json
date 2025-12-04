@@ -11,5 +11,10 @@
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "ai": "^5.0.106",
+    "playwright": "^1.57.0",
+    "zod": "3"
   }
 }
